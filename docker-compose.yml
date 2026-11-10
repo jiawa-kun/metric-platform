@@ -1,0 +1,108 @@
+# metric-platform 本地基础设施（单机开发用，不能当生产配置抄）
+#
+# 用法（在仓库根目录）：
+#   docker compose up -d
+#   docker compose ps          # 等 kafka / clickhouse / mysql 都 healthy
+#   docker compose logs -f kafka
+#   docker compose down        # 停容器，保留数据卷
+#   docker compose down -v     # 停容器并删除数据（下次相当于全新环境）
+#
+# 端口（左边是本机端口，和已有服务冲突时只改左边）：
+#   9092   Kafka，给本机 Java 程序用（订单生成器连这个）
+#   29092  Kafka，给 docker 网络里的其他容器用（D3 的 Flink 会连 kafka:29092）
+#   8123   ClickHouse HTTP（curl / 浏览器）
+#   9000   ClickHouse 原生协议（JDBC）
+#   3306   MySQL 8
+#
+# 为什么 Kafka 要两个端口？
+#   客户端连 Kafka 时，broker 会把自己的 advertised.listeners 告诉客户端。
+#   本机 Java 进程要连 localhost:9092；容器里的 Flink 要连 kafka:29092。
+#   只配一个地址，必然有一边连不上。这是 Kafka 最常见的坑之一。
+#
+# 本文件用的是 KRaft 模式（Kafka 自带的共识，不再依赖 ZooKeeper）。
+
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: metric-kafka
+    hostname: kafka
+    ports:
+      - "9092:9092"     # 本机访问
+      - "29092:29092"   # 预留给 docker 网络内的服务，方便以后对照
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # 三个监听器：对外（本机）、对内（容器网络）、控制器（KRaft 用，客户端不要连）
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # 单机没有副本，内部 topic 的副本数必须是 1，否则 broker 起不来
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # 关闭自动建 topic，改由生成器里的 AdminClient 显式创建（便于控制分区数）
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      # 固定 CLUSTER_ID，卷里已有数据时必须和第一次格式化的值一致
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: metric-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    # 开发环境先放开默认用户，D2 建表时再用。生产必须设密码。
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: metric-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: metric
+      MYSQL_DATABASE: metric
+      MYSQL_USER: metric
+      MYSQL_PASSWORD: metric
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-umetric", "-pmetric"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  kafka_data:
+  clickhouse_data:
+  mysql_data:

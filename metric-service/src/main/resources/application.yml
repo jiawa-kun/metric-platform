@@ -1,0 +1,7 @@
+# M0 只用到端口。D4 做语义层、D5 接 Redis 时再往这里加配置。
+server:
+  port: 8080
+
+spring:
+  application:
+    name: metric-service

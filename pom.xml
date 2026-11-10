@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      父 POM：统一版本和 Java 版本，本身不包含业务代码。
+      两个子模块：
+        order-generator  — M0 订单模拟生成器（纯 kafka-clients，不引入 Spring）
+        metric-service   — 后续语义层的 Spring Boot 服务（M0 只放一个 /health）
+    -->
+    <groupId>com.jiawa</groupId>
+    <artifactId>metric-platform</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>metric-platform</name>
+    <description>指标平台学习项目。业务数据为模拟电商订单，不是真实生产数据。</description>
+
+    <modules>
+        <module>order-generator</module>
+        <module>metric-service</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <spring-boot.version>3.4.5</spring-boot.version>
+        <!-- 与 docker-compose 中的 apache/kafka:3.9.1 以及本地验证用的 3.9.2 同一大版本 -->
+        <kafka.version>3.9.1</kafka.version>
+        <jackson.version>2.18.3</jackson.version>
+        <slf4j.version>2.0.17</slf4j.version>
+    </properties>
+
+    <!--
+      只在父 POM 里锁定版本，子模块声明依赖时不再写 <version>。
+      spring-boot-dependencies 用 import，这样 metric-service 不必把父 POM 改成 spring-boot-starter-parent，
+      order-generator 也就不会被带上 Spring。
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-clients</artifactId>
+                <version>${kafka.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>3.6.0</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

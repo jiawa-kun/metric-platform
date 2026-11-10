@@ -1,0 +1,23 @@
+# 构建产物
+target/
+*.class
+*.jar
+!**/src/**/README.md
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+*.swp
+
+# 日志与本地运行残留
+*.log
+/logs/
+/tmp-kafka/
+
+# 系统
+.DS_Store
+Thumbs.db
